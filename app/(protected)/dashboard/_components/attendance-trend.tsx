@@ -168,8 +168,8 @@ export default function AttendanceTrend({ initialTrend, initialHours }: Props) {
                                         color: "var(--color-text)",
                                     }}
                                     labelFormatter={(v) => formatDay(v as string)}
-                                    formatter={(val: number) => [
-                                        `${val} asistentes`,
+                                    formatter={(val: any) => [
+                                        `${val ?? 0} asistentes`,
                                         "Total",
                                     ]}
                                 />
@@ -234,7 +234,7 @@ export default function AttendanceTrend({ initialTrend, initialHours }: Props) {
                                         fontSize: "12px",
                                         color: "var(--color-text)",
                                     }}
-                                    formatter={(val: number) => [`${val} check-ins`, "Total"]}
+                                    formatter={(val: any) => [`${val ?? 0} check-ins`, "Total"]}
                                 />
                                 <Bar
                                     dataKey="total"

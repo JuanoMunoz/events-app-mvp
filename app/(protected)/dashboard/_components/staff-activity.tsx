@@ -239,8 +239,8 @@ export default function StaffActivity({
                                             borderRadius: "4px",
                                             fontSize: "12px",
                                         }}
-                                        formatter={(val: number, name: string) => [
-                                            `${val.toLocaleString("es-CO")} (${Math.round((val / totalCount) * 100)}%)`,
+                                        formatter={(val: any, name: any) => [
+                                            `${(val ?? 0).toLocaleString("es-CO")} (${Math.round(((val ?? 0) / totalCount) * 100)}%)`,
                                             name,
                                         ]}
                                     />

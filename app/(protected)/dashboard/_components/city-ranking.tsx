@@ -141,7 +141,7 @@ export default function CityRanking({ cities }: Props) {
                                                 borderRadius: "4px",
                                                 fontSize: "12px",
                                             }}
-                                            formatter={(val: number) => [`${val} eventos`, "Total"]}
+                                            formatter={(val: any) => [`${val ?? 0} eventos`, "Total"]}
                                         />
                                         <Bar
                                             dataKey="totalEvents"
@@ -195,8 +195,8 @@ export default function CityRanking({ cities }: Props) {
                                                 borderRadius: "4px",
                                                 fontSize: "12px",
                                             }}
-                                            formatter={(val: number) => [
-                                                `${val.toLocaleString("es-CO")} asistentes`,
+                                            formatter={(val: any) => [
+                                                `${(val ?? 0).toLocaleString("es-CO")} asistentes`,
                                                 "Total",
                                             ]}
                                         />

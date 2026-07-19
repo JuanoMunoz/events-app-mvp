@@ -247,8 +247,8 @@ export default function AttendanceByEvent({ events }: Props) {
                                             fontSize: "12px",
                                             color: "var(--color-text)",
                                         }}
-                                        formatter={(val: number) => [
-                                            `${val} asistentes`,
+                                        formatter={(val: any) => [
+                                            `${val ?? 0} asistentes`,
                                             "Total",
                                         ]}
                                     />
