@@ -159,7 +159,7 @@ export default function AttendanceForm({
         setLoading(false)
         setIsAutoSubmitting(false)
 
-        if (res?.error) {
+        if ("error" in res) {
             toast.error(res.error)
             return
         }
@@ -168,7 +168,7 @@ export default function AttendanceForm({
         setCount((c) => c + 1)
         toast.success(`✓ ${res.assistantName} registrado/a`)
 
-        if (res.gafeteData) {
+        if ("gafeteData" in res && res.gafeteData) {
             setPrintData(res.gafeteData as GafeteData)
             setIsPrintModalOpen(true)
         } else {

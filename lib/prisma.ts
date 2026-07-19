@@ -91,7 +91,7 @@ function buildPrismaClient() {
                             entity: model,
                             entityId: String(entityId),
                             userId: userId ?? undefined,
-                            before: before ?? undefined,
+                            before: (before as any) ?? undefined,
                             after: auditAction !== "DELETE" ? (result as any) ?? undefined : undefined,
                             ipAddress: ip,
                             userAgent,

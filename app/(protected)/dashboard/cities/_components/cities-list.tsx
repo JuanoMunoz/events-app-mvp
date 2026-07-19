@@ -99,9 +99,9 @@ export default function CitiesList({ initialCities, isSuperAdmin }: CitiesListPr
 
     startTransition(async () => {
       const res = await createCityAction(fd)
-      if (res?.error) {
+      if ("error" in res) {
         toast.error(res.error)
-      } else if (res?.city) {
+      } else if ("city" in res && res.city) {
         setCities((prev) => [
           { ...res.city, createdAt: new Date(res.city.createdAt).toISOString() },
           ...prev,

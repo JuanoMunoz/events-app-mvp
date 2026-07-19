@@ -99,9 +99,9 @@ export default function OrganizationsList({ initialOrganizations, isSuperAdmin }
 
     startTransition(async () => {
       const res = await createOrganizationAction(fd)
-      if (res?.error) {
+      if ("error" in res) {
         toast.error(res.error)
-      } else if (res?.organization) {
+      } else if ("organization" in res && res.organization) {
         setOrganizations((prev) => [
           { ...res.organization, createdAt: new Date(res.organization.createdAt).toISOString() },
           ...prev,
