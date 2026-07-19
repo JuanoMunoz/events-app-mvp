@@ -1,0 +1,211 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Organization {
+  id        String   @id @default(uuid())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  events    Event[]
+
+  createdById String?
+  createdBy   User?   @relation("OrganizationCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedById String?
+  updatedBy   User?   @relation("OrganizationUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+}
+
+model Event {
+  id             String       @id @default(uuid())
+  name           String
+  description    String
+  cityId         Int
+  startDate      DateTime
+  endDate        DateTime
+  location       String?
+  organizationId String
+  capacity       Int?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  days           EventDay[]
+  city           City         @relation(fields: [cityId], references: [id], onDelete: Cascade)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  createdById String?
+  createdBy   User?   @relation("EventCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedById String?
+  updatedBy   User?   @relation("EventUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+}
+
+model EventDay {
+  id          String       @id @default(uuid())
+  eventId     String
+  date        DateTime
+  title       String?
+  event       Event        @relation(fields: [eventId], references: [id])
+  attendances Attendance[]
+
+  createdById String?
+  createdBy   User?   @relation("EventDayCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedById String?
+  updatedBy   User?   @relation("EventDayUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+}
+
+model City {
+  id        Int      @id @default(autoincrement())
+  name      String
+  createdAt DateTime @default(now())
+  events    Event[]
+
+  createdById String?
+  createdBy   User?   @relation("CityCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+}
+
+model Attendance {
+  id String @id @default(uuid())
+
+  eventDayId  String
+  assistantId String
+  userId      String
+
+  attendedAt DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  qrCode    String?
+  ipAddress String?
+  checkedIn Boolean @default(true)
+
+  event     EventDay  @relation(fields: [eventDayId], references: [id], onDelete: Cascade)
+  assistant Assistant @relation(fields: [assistantId], references: [id])
+  user      User      @relation("AttendanceUser", fields: [userId], references: [id])
+
+  @@unique([assistantId, eventDayId])
+}
+
+model Assistant {
+  id             String       @id @default(uuid())
+  name           String
+  email          String       @unique
+  identification String
+  phoneNumber    String
+  registrations  Attendance[]
+
+  createdById String?
+  createdBy   User?   @relation("AssistantCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+}
+
+enum Role {
+  SUPER_ADMIN
+  ORGANIZER
+  STAFF
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+}
+
+model User {
+  id            String       @id
+  name          String
+  email         String
+  emailVerified Boolean      @default(false)
+  image         String?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  sessions      Session[]
+  accounts      Account[]
+  role          Role
+  attendances   Attendance[] @relation("AttendanceUser")
+
+  organizationsCreated Organization[] @relation("OrganizationCreatedBy")
+  organizationsUpdated Organization[] @relation("OrganizationUpdatedBy")
+  eventsCreated        Event[]        @relation("EventCreatedBy")
+  eventsUpdated        Event[]        @relation("EventUpdatedBy")
+  eventDaysCreated     EventDay[]     @relation("EventDayCreatedBy")
+  eventDaysUpdated     EventDay[]     @relation("EventDayUpdatedBy")
+  citiesCreated        City[]         @relation("CityCreatedBy")
+  assistantsCreated    Assistant[]    @relation("AssistantCreatedBy")
+
+  auditLogs AuditLog[] @relation("AuditLogUser")
+
+  @@unique([email])
+  @@map("user")
+}
+
+model Session {
+  id        String   @id
+  expiresAt DateTime
+  token     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([token])
+  @@index([userId])
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([userId])
+  @@map("account")
+}
+
+model Verification {
+  id         String   @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+  @@map("verification")
+}
+
+model AuditLog {
+  id       String      @id @default(uuid())
+  action   AuditAction
+  entity   String
+  entityId String
+
+  userId String?
+  user   User?   @relation("AuditLogUser", fields: [userId], references: [id], onDelete: SetNull)
+
+  before Json?
+  after  Json?
+
+  ipAddress String?
+  userAgent String?
+
+  createdAt DateTime @default(now())
+
+  @@index([entity, entityId])
+  @@index([userId])
+  @@index([createdAt])
+  @@map("audit_log")
+}

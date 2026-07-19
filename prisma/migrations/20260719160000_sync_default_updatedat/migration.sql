@@ -1,0 +1,1 @@
+-- Sync: Organization.updatedAt and Attendance.updatedAt now use @default(now()) matching existing DB state. No structural changes.
