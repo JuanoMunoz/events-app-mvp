@@ -14,7 +14,7 @@ export default function BottomNav({ role }: { role: Role }) {
 
   return (
     <nav
-      className="lg:hidden fixed bottom-0 left-0 right-0 z-40 flex items-center justify-around px-4 py-2"
+      className="lg:hidden fixed bottom-0 left-0 right-0 z-40 flex items-center overflow-x-auto whitespace-nowrap hide-scrollbar px-2 py-2"
       style={{
         background: "var(--color-surface)",
         borderTop: "1px solid var(--color-border)",

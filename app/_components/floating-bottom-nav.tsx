@@ -21,7 +21,7 @@ export default function FloatingBottomNav() {
 
   return (
     <nav
-      className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-1 px-3 py-1.5 rounded-full shadow-lg"
+      className="lg:hidden fixed bottom-4 left-4 right-4 z-40 flex items-center overflow-x-auto whitespace-nowrap hide-scrollbar px-2 py-2 rounded-2xl shadow-lg border"
       style={{
         background: "var(--color-surface)",
         border: "1px solid var(--color-border)",

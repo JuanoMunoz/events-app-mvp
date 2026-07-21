@@ -11,17 +11,41 @@ export default async function KioskoEscarapelaPage() {
 
     const dbEvents = await prisma.event.findMany({
         where: { startDate: { lte: now }, endDate: { gte: now } }, // Solo eventos activos por defecto para el kiosko
-        include: { city: true },
+        include: {
+            city:         true,
+            organization: true,
+            days: { orderBy: { date: "asc" } },
+        },
         orderBy: { startDate: "asc" },
     })
 
+    // Ordenar por cercanía a hoy (aunque ya están filtrados por activos, ayuda a mantener el orden si hay varios)
+    const nowTime = Date.now()
+    dbEvents.sort((a, b) => {
+        const diffA = Math.abs(nowTime - new Date(a.startDate).getTime())
+        const diffB = Math.abs(nowTime - new Date(b.startDate).getTime())
+        return diffA - diffB
+    })
+
     const events = dbEvents.map((e) => ({
-        id: e.id,
-        title: e.name,
-        city: e.city.name,
-        date: e.startDate.toISOString(),
-        status: "active" as const,
+        id:               e.id,
+        title:            e.name,
+        city:             e.city.name,
+        date:             e.startDate.toISOString(),
+        location:         e.location,
+        organizationName: e.organization.name,
+        status:           "active" as const,
+        days: e.days.map((d) => ({
+            id:    d.id,
+            date:  d.date.toISOString(),
+            label: d.date.toLocaleDateString("es-CO", {
+                weekday: "short",
+                day:     "numeric",
+                month:   "short",
+            })
+        }))
     }))
+
 
     const cities = Array.from(new Set(events.map((e) => e.city))).sort()
 

@@ -25,6 +25,14 @@ export async function getAllEventsAction() {
                 days: { select: { id: true, date: true, title: true } },
             },
         })
+
+        const now = Date.now()
+        events.sort((a, b) => {
+            const diffA = Math.abs(now - new Date(a.startDate).getTime())
+            const diffB = Math.abs(now - new Date(b.startDate).getTime())
+            return diffA - diffB
+        })
+
         return { events }
     } catch {
         return { error: "Error al obtener los eventos" }

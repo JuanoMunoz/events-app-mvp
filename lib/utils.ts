@@ -5,9 +5,12 @@ export function cn(...classes: (string | undefined | false | null)[]): string {
   return classes.filter(Boolean).join(" ")
 }
 
-/** Formats a date string (YYYY-MM-DD) to a readable Spanish date */
+/** Formats a date string (YYYY-MM-DD or full ISO) to a readable Spanish date */
 export function formatDate(dateStr: string): string {
-  const date = new Date(dateStr + "T00:00:00")
+  // If already has time component, parse directly; otherwise append midnight local
+  const normalized = dateStr.includes("T") ? dateStr : dateStr + "T00:00:00"
+  const date = new Date(normalized)
+  if (isNaN(date.getTime())) return dateStr
   return date.toLocaleDateString("es-CO", {
     weekday: "short",
     day: "numeric",

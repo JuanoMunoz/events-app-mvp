@@ -39,6 +39,14 @@ export async function getEventsForSelectorAction() {
             orderBy: { startDate: "desc" },
             select: { id: true, name: true, startDate: true },
         })
+
+        const now = Date.now()
+        events.sort((a, b) => {
+            const diffA = Math.abs(now - new Date(a.startDate).getTime())
+            const diffB = Math.abs(now - new Date(b.startDate).getTime())
+            return diffA - diffB
+        })
+
         return { events }
     } catch {
         return { error: "Error al obtener eventos" }

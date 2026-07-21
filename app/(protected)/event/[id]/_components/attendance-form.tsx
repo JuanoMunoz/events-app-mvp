@@ -2,20 +2,24 @@
 
 import { useRef, useState, useEffect } from "react"
 import { Check, Loader2, ScanLine, ChevronDown, AlertCircle } from "lucide-react"
-import { toast } from "sonner"
-import { registerAttendanceAction } from "../../actions"
+import { toast }            from "sonner"
+import { useOfflineQueue }  from "@/app/_hooks/use-offline-queue"
 import { useDocumentLookup } from "@/app/_hooks/use-document-lookup"
-import PrintModal from "./print-modal"
-import type { GafeteData } from "@/app/_components/print/gafete"
+import PrintModal            from "./print-modal"
+import type { GafeteData }   from "@/app/_components/print/gafete"
+import { parseColombianID }  from "@/app/_lib/parse-colombian-id"
 
 interface AttendanceFormProps {
     cities: string[]
     events: {
-        id: string
-        title: string
-        city: string
-        date: string
-        status: "active" | "upcoming" | "past"
+        id:               string
+        title:            string
+        city:             string
+        date:             string
+        location?:        string | null
+        organizationName?: string
+        status:           "active" | "upcoming" | "past"
+        days:             { id: string; date: string; label: string }[]
     }[]
     preselectedEventId?: string
 }
@@ -26,7 +30,6 @@ interface FormData {
     apellido: string
     telefono: string
     correo: string
-    confirma: boolean
 }
 
 const EMPTY_FORM: FormData = {
@@ -35,7 +38,6 @@ const EMPTY_FORM: FormData = {
     apellido: "",
     telefono: "",
     correo: "",
-    confirma: false,
 }
 
 export default function AttendanceForm({
@@ -47,6 +49,23 @@ export default function AttendanceForm({
     const [city, setCity] = useState<string>(selectedEventOnMount?.city ?? "")
     const [eventId, setEventId] = useState<string>(preselectedEventId ?? "")
     const [form, setForm] = useState<FormData>(EMPTY_FORM)
+
+    // Determinar el día por defecto: el que coincide con hoy, o el primero
+    function getDefaultDayId(days: { id: string; date: string }[]): string {
+        if (!days || days.length === 0) return ""
+        const today = new Date()
+        today.setHours(0, 0, 0, 0)
+        const todayDay = days.find((d) => {
+            const dayDate = new Date(d.date)
+            dayDate.setHours(0, 0, 0, 0)
+            return dayDate.getTime() === today.getTime()
+        })
+        return todayDay?.id ?? days[0].id
+    }
+
+    const [eventDayId, setEventDayId] = useState<string>(
+        () => getDefaultDayId(selectedEventOnMount?.days ?? [])
+    )
 
     // UI States
     const [loading, setLoading] = useState(false)
@@ -63,8 +82,11 @@ export default function AttendanceForm({
 
     const cedulaRef = useRef<HTMLInputElement>(null)
 
+    // Hook offline — reemplaza registerAttendanceAction
+    const { submitAttendance } = useOfflineQueue()
+
     // Hook de lookup
-    const lookup = useDocumentLookup(form.cedula)
+    const lookup = useDocumentLookup(form.cedula, eventDayId || undefined)
 
     // Auto-focus en cédula cuando cambia evento
     useEffect(() => {
@@ -82,12 +104,11 @@ export default function AttendanceForm({
                 apellido: lookup.assistant!.apellido,
                 telefono: lookup.assistant!.telefono || prev.telefono,
                 correo: lookup.assistant!.correo || prev.correo,
-                confirma: true, // Auto-confirmar si lo encontramos
             }))
         }
     }, [lookup.assistant, success, isAutoSubmitting, isPrintModalOpen])
 
-    // Auto-disparo
+    // Auto-disparo (inmediato)
     useEffect(() => {
         if (
             lookup.status === "found" &&
@@ -100,23 +121,16 @@ export default function AttendanceForm({
             !isPrintModalOpen
         ) {
             setIsAutoSubmitting(true)
-            toast.info("Documento reconocido. Registrando en 1s...")
+            toast.info("Documento reconocido. Registrando...")
             
-            autoSubmitTimeout.current = setTimeout(() => {
-                // Trigger form submission
-                const submitBtn = document.getElementById("attendance-submit")
-                if (submitBtn) submitBtn.click()
-            }, 1000)
+            // Inmediato
+            const submitBtn = document.getElementById("attendance-submit")
+            if (submitBtn) submitBtn.click()
         }
 
         // Cancelar auto-disparo si cambia el status a algo inválido
         if (lookup.status !== "found" && isAutoSubmitting) {
-            if (autoSubmitTimeout.current) clearTimeout(autoSubmitTimeout.current)
             setIsAutoSubmitting(false)
-        }
-
-        return () => {
-            if (autoSubmitTimeout.current) clearTimeout(autoSubmitTimeout.current)
         }
     }, [lookup.status, form.nombre, form.apellido, form.cedula, loading, success, isAutoSubmitting, isPrintModalOpen])
 
@@ -124,8 +138,30 @@ export default function AttendanceForm({
     const cityEvents = events.filter((e) => e.city === city && e.status !== "past")
     const selectedEvent = events.find((e) => e.id === eventId)
 
+    // Actualizar día por defecto cuando cambia el evento
+    const handleEventChange = (newEventId: string) => {
+        setEventId(newEventId)
+        const ev = events.find((e) => e.id === newEventId)
+        setEventDayId(getDefaultDayId(ev?.days ?? []))
+    }
+
     function setField<K extends keyof FormData>(key: K, value: FormData[K]) {
         setForm((prev) => ({ ...prev, [key]: value }))
+    }
+
+    const handleCedulaChange = (raw: string) => {
+        // Intentar parsear como código 2D de cédula colombiana
+        const parsed = parseColombianID(raw)
+        if (parsed) {
+            setForm(prev => ({
+                ...prev,
+                cedula: parsed.cedula,
+                nombre: parsed.nombre,
+                apellido: parsed.apellido,
+            }))
+        } else {
+            setField("cedula", raw)
+        }
     }
 
     async function handleSubmit(e: React.FormEvent) {
@@ -140,22 +176,26 @@ export default function AttendanceForm({
             setIsAutoSubmitting(false)
             return
         }
-        if (!form.confirma) {
-            toast.error("Debes confirmar la asistencia")
-            setIsAutoSubmitting(false)
-            return
-        }
 
         setLoading(true)
-        const fd = new FormData()
-        fd.append("eventId", eventId)
-        fd.append("cedula", form.cedula)
-        fd.append("nombre", form.nombre)
-        fd.append("apellido", form.apellido)
-        fd.append("telefono", form.telefono)
-        fd.append("correo", form.correo)
 
-        const res = await registerAttendanceAction(fd)
+        const res = await submitAttendance({
+            eventId,
+            eventDayId:       eventDayId ?? "",
+            cedula:           form.cedula,
+            nombre:           form.nombre,
+            apellido:         form.apellido,
+            telefono:         form.telefono,
+            correo:           form.correo,
+            // Datos para gafete offline
+            eventName:        selectedEvent?.title ?? "",
+            eventDate:        selectedEvent?.days.find(d => d.id === eventDayId)?.date
+                              ?? selectedEvent?.date
+                              ?? new Date().toISOString(),
+            eventLocation:    selectedEvent?.location,
+            organizationName: selectedEvent?.organizationName,
+        })
+
         setLoading(false)
         setIsAutoSubmitting(false)
 
@@ -166,12 +206,14 @@ export default function AttendanceForm({
 
         setSuccess(true)
         setCount((c) => c + 1)
-        toast.success(`✓ ${res.assistantName} registrado/a`)
 
-        if ("gafeteData" in res && res.gafeteData) {
+        // Tanto success como queued abren el modal de impresión
+        if (("success" in res || "queued" in res) && res.gafeteData) {
+            toast.success(`✓ ${res.assistantName} registrado/a`)
             setPrintData(res.gafeteData as GafeteData)
             setIsPrintModalOpen(true)
         } else {
+            toast.success(`✓ ${res.assistantName} registrado/a`)
             resetScanner()
         }
     }
@@ -300,7 +342,7 @@ export default function AttendanceForm({
                             <select
                                 id="event-select"
                                 value={eventId}
-                                onChange={(e) => setEventId(e.target.value)}
+                                onChange={(e) => handleEventChange(e.target.value)}
                                 style={{
                                     appearance: "none" as const,
                                     background: "transparent",
@@ -335,6 +377,57 @@ export default function AttendanceForm({
                                 className="pointer-events-none absolute right-0 top-1/2 -translate-y-1/2"
                                 style={{
                                     color: eventId ? "var(--color-accent)" : "var(--color-text-muted)",
+                                }}
+                            />
+                        </div>
+                    </div>
+                )}
+
+                {/* Selector de día del evento */}
+                {eventId && selectedEvent && selectedEvent.days.length > 0 && (
+                    <div className="flex items-baseline gap-3 flex-wrap mt-1">
+                        <span
+                            className="text-sm font-medium"
+                            style={{ color: "var(--color-text-muted)" }}
+                        >
+                            Día
+                        </span>
+                        <div className="relative">
+                            <select
+                                id="event-day-select"
+                                value={eventDayId}
+                                onChange={(e) => setEventDayId(e.target.value)}
+                                style={{
+                                    appearance: "none" as const,
+                                    background: "transparent",
+                                    border: "none",
+                                    borderBottom: eventDayId
+                                        ? "2px solid var(--color-primary)"
+                                        : "2px solid var(--color-border)",
+                                    borderRadius: 0,
+                                    outline: "none",
+                                    cursor: "pointer",
+                                    fontSize: "0.875rem",
+                                    fontFamily: "inherit",
+                                    color: eventDayId ? "var(--color-primary)" : "var(--color-text-muted)",
+                                    paddingRight: "1.5rem",
+                                    paddingBottom: "2px",
+                                    fontWeight: 500,
+                                    minWidth: "160px",
+                                    transition: "color 150ms, border-color 150ms",
+                                }}
+                            >
+                                {selectedEvent.days.map((d) => (
+                                    <option key={d.id} value={d.id}>
+                                        {d.label}
+                                    </option>
+                                ))}
+                            </select>
+                            <ChevronDown
+                                size={11}
+                                className="pointer-events-none absolute right-0 top-1/2 -translate-y-1/2"
+                                style={{
+                                    color: eventDayId ? "var(--color-primary)" : "var(--color-text-muted)",
                                 }}
                             />
                         </div>
@@ -408,7 +501,12 @@ export default function AttendanceForm({
                             autoComplete="off"
                             placeholder="1234567890"
                             value={form.cedula}
-                            onChange={(e) => setField("cedula", e.target.value)}
+                            onChange={(e) => handleCedulaChange(e.target.value)}
+                            onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                    e.preventDefault() // Evitar submit prematuro del escáner
+                                }
+                            }}
                             style={{ 
                                 ...inputStyle, 
                                 fontSize: "1rem", 
@@ -513,42 +611,6 @@ export default function AttendanceForm({
                             />
                         </label>
                     </div>
-
-                    {/* Checkbox de confirmación */}
-                    <label
-                        className="flex items-start gap-3 cursor-pointer"
-                        htmlFor="attendance-confirmar"
-                    >
-                        <div className="relative mt-0.5">
-                            <input
-                                id="attendance-confirmar"
-                                type="checkbox"
-                                checked={form.confirma}
-                                onChange={(e) => setField("confirma", e.target.checked)}
-                                className="sr-only"
-                            />
-                            <div
-                                className="w-4 h-4 rounded-sm flex items-center justify-center transition-all"
-                                style={{
-                                    border: form.confirma
-                                        ? "2px solid var(--color-primary)"
-                                        : "2px solid var(--color-border)",
-                                    background: form.confirma
-                                        ? "var(--color-primary)"
-                                        : "var(--color-surface)",
-                                }}
-                                onClick={() => setField("confirma", !form.confirma)}
-                            >
-                                {form.confirma && (
-                                    <Check size={10} strokeWidth={3} style={{ color: "#fff" }} />
-                                )}
-                            </div>
-                        </div>
-                        <span className="text-sm" style={{ color: "var(--color-text)" }}>
-                            Confirmo mi asistencia al evento{" "}
-                            <strong>{selectedEvent?.title}</strong>.
-                        </span>
-                    </label>
 
                     {/* Submit */}
                     <button

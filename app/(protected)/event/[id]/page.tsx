@@ -1,6 +1,5 @@
 import AttendanceForm from "./_components/attendance-form"
 import { prisma } from "@/lib/prisma"
-import { redirect } from "next/navigation"
 
 interface EventPageProps {
   params: Promise<{ id: string }>
@@ -9,12 +8,24 @@ interface EventPageProps {
 export default async function EventPage({ params }: EventPageProps) {
   const { id } = await params
 
-  // 1. Obtener eventos de la base de datos
+  // 1. Obtener eventos de la base de datos (incluyendo días y organización)
   const dbEvents = await prisma.event.findMany({
     orderBy: { startDate: "desc" },
     include: {
       city: true,
+      organization: true,
+      days: {
+        orderBy: { date: "asc" }
+      }
     }
+  })
+
+  // Ordenar por cercanía a hoy
+  const nowTime = Date.now()
+  dbEvents.sort((a, b) => {
+    const diffA = Math.abs(nowTime - new Date(a.startDate).getTime())
+    const diffB = Math.abs(nowTime - new Date(b.startDate).getTime())
+    return diffA - diffB
   })
 
   // 2. Transformar eventos
@@ -34,9 +45,21 @@ export default async function EventPage({ params }: EventPageProps) {
       title: e.name,
       city: e.city.name,
       date: e.startDate.toISOString(),
-      status
+      location: e.location,
+      organizationName: e.organization.name,
+      status,
+      days: e.days.map((d) => ({
+        id: d.id,
+        date: d.date.toISOString(),
+        label: d.date.toLocaleDateString("es-CO", {
+          weekday: "short",
+          day: "numeric",
+          month: "short",
+        })
+      }))
     }
   })
+
 
   // 3. Extraer ciudades únicas
   const cities = Array.from(new Set(dbEvents.map((e) => e.city.name))).sort()
