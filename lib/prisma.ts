@@ -6,14 +6,14 @@ const globalForPrisma = globalThis as unknown as {
     prisma: ReturnType<typeof buildPrismaClient> | undefined
 }
 
-const AUDITED_MODELS = new Set([
-    "organization",
-    "event",
-    "eventDay",
-    "city",
-    "assistant",
-    "attendance",
-])
+const AUDIT_FIELDS: Record<string, string[]> = {
+    organization: ["createdById", "updatedById"],
+    event: ["createdById", "updatedById"],
+    eventDay: ["createdById", "updatedById"],
+    city: ["createdById"],
+    assistant: ["createdById"],
+    attendance: [], // uses userId explicitly, not createdById
+}
 
 function buildPrismaClient() {
     const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL })
@@ -23,7 +23,10 @@ function buildPrismaClient() {
         query: {
             $allModels: {
                 async $allOperations({ model, operation, args, query }) {
-                    if (!model || !AUDITED_MODELS.has(model.charAt(0).toLowerCase() + model.slice(1))) {
+                    const modelName = model ? model.charAt(0).toLowerCase() + model.slice(1) : "";
+                    const fields = AUDIT_FIELDS[modelName];
+
+                    if (!model || !fields) {
                         return query(args)
                     }
 
@@ -36,15 +39,15 @@ function buildPrismaClient() {
                     if (operation === "create") {
                         const data = (args as any).data
                         if (userId && data) {
-                            data.createdById = userId
-                            data.updatedById = userId
+                            if (fields.includes("createdById")) data.createdById = userId
+                            if (fields.includes("updatedById")) data.updatedById = userId
                         }
                     }
 
                     if (operation === "update" || operation === "upsert") {
                         const data = (args as any).data
                         if (userId && data) {
-                            data.updatedById = userId
+                            if (fields.includes("updatedById")) data.updatedById = userId
                         }
                     }
 

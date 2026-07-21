@@ -6,6 +6,7 @@ import { checkSession, runWithAuditContext } from "@/lib/utils/auth"
 export async function registerAttendanceAction(formdata: FormData) {
     const session = await checkSession()
     if (!session || !session.user) {
+        console.warn(`[Registro Asistencia] ERROR -> Intento sin sesión iniciada.`)
         return { error: "Debes iniciar sesión para registrar asistencia" }
     }
 
@@ -18,6 +19,7 @@ export async function registerAttendanceAction(formdata: FormData) {
     const correo = (formdata.get("correo") as string)?.trim() || ""
 
     if (!eventId || !cedula || !nombre || !apellido) {
+        console.warn(`[Registro Asistencia] ERROR -> Faltan campos. (Cédula: ${cedula}, Nombre: ${nombre}, Apellido: ${apellido})`)
         return { error: "Faltan campos obligatorios (Evento, Cédula, Nombre, Apellido)" }
     }
 
@@ -31,6 +33,7 @@ export async function registerAttendanceAction(formdata: FormData) {
             })
 
             if (eventDays.length === 0) {
+                console.warn(`[Registro Asistencia] ERROR -> El evento (ID: ${eventId}) no tiene días configurados. (Cédula: ${cedula})`)
                 return { error: "El evento no tiene días configurados" }
             }
 
@@ -107,6 +110,8 @@ export async function registerAttendanceAction(formdata: FormData) {
             })
 
             const event = targetDay.event
+
+            console.log(`[Registro Asistencia] OK -> Cédula: ${cedula} | Nombre: ${fullName} | Evento: "${event.name}" | Staff: ${session.user.name}`)
 
             return { 
                 success: true, 
