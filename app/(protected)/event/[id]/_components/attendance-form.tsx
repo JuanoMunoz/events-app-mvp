@@ -213,8 +213,16 @@ export default function AttendanceForm({
         toast.info("Reimprimiendo credencial...")
     }
 
-    const handleCedulaChange = (raw: string) => {
-        // Intentar parsear como código 2D de cédula colombiana
+    // Buffer para capturar lecturas de escáner en ráfaga (USB HID Keyboard mode)
+    const scanBufferRef = useRef<string>("")
+    const lastKeyTimeRef = useRef<number>(0)
+    const scanTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+
+    const processScanBuffer = () => {
+        const raw = scanBufferRef.current
+        scanBufferRef.current = ""
+        if (!raw) return
+
         const parsed = parseColombianID(raw)
         if (parsed) {
             setForm(prev => ({
@@ -224,7 +232,61 @@ export default function AttendanceForm({
                 apellido: parsed.apellido,
             }))
         } else {
-            setField("cedula", raw)
+            const cleanCedula = raw.replace(/\D/g, '').replace(/^0+/, '')
+            if (cleanCedula && cleanCedula.length >= 4) {
+                setField("cedula", cleanCedula)
+            }
+        }
+    }
+
+    const handleCedulaKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        const now = Date.now()
+        const timeDiff = now - lastKeyTimeRef.current
+        lastKeyTimeRef.current = now
+
+        // Tecleo rápido (< 80ms entre teclas) indica ráfaga de escáner
+        const isFastTyping = timeDiff < 80
+
+        if (e.key === "Tab" || e.key === "Enter") {
+            if (isFastTyping || scanBufferRef.current.length > 0) {
+                e.preventDefault()
+                const char = e.key === "Tab" ? "\t" : "\n"
+                scanBufferRef.current += char
+
+                if (scanTimeoutRef.current) clearTimeout(scanTimeoutRef.current)
+                scanTimeoutRef.current = setTimeout(processScanBuffer, 100)
+                return
+            } else if (e.key === "Enter") {
+                if (lookup.status === "already_checked_in") {
+                    e.preventDefault()
+                    handleReprintExisting()
+                }
+            }
+        } else if (e.key.length === 1) {
+            if (isFastTyping || scanBufferRef.current.length > 0) {
+                scanBufferRef.current += e.key
+                if (scanTimeoutRef.current) clearTimeout(scanTimeoutRef.current)
+                scanTimeoutRef.current = setTimeout(processScanBuffer, 100)
+            } else {
+                scanBufferRef.current = e.key
+                if (scanTimeoutRef.current) clearTimeout(scanTimeoutRef.current)
+                scanTimeoutRef.current = setTimeout(processScanBuffer, 100)
+            }
+        }
+    }
+
+    const handleCedulaChange = (raw: string) => {
+        const parsed = parseColombianID(raw)
+        if (parsed) {
+            setForm(prev => ({
+                ...prev,
+                cedula: parsed.cedula,
+                nombre: parsed.nombre,
+                apellido: parsed.apellido,
+            }))
+        } else {
+            const cleanRaw = raw.replace(/[\t\r\n]/g, '')
+            setField("cedula", cleanRaw)
         }
     }
 
@@ -569,14 +631,7 @@ export default function AttendanceForm({
                             placeholder="1234567890"
                             value={form.cedula}
                             onChange={(e) => handleCedulaChange(e.target.value)}
-                            onKeyDown={(e) => {
-                                if (e.key === "Enter") {
-                                    if (lookup.status === "already_checked_in") {
-                                        e.preventDefault()
-                                        handleReprintExisting()
-                                    }
-                                }
-                            }}
+                            onKeyDown={handleCedulaKeyDown}
                             style={{ 
                                 ...inputStyle, 
                                 fontSize: "1rem", 
