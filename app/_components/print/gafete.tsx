@@ -1,4 +1,5 @@
 import Barcode from "./barcode"
+import { MapPin, Calendar } from "lucide-react"
 
 export interface GafeteData {
     attendanceId: string
@@ -71,7 +72,7 @@ export default function Gafete({ data }: GafeteProps) {
             {/* ── Banner Superior ── */}
             <div
                 style={{
-                    background: "linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #125af5 100%)",
+                    background: "#0f172a",
                     padding: "4mm 6mm 6mm",
                     color: "#ffffff",
                     position: "relative",
@@ -128,7 +129,7 @@ export default function Gafete({ data }: GafeteProps) {
                             gap: "1mm",
                         }}
                     >
-                        <span>📍</span> {data.location}
+                        <MapPin size={10} /> {data.location}
                     </p>
                 )}
             </div>
@@ -143,9 +144,12 @@ export default function Gafete({ data }: GafeteProps) {
                     color: "#64748b",
                     fontWeight: 600,
                     textTransform: "capitalize",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "1mm",
                 }}
             >
-                🗓️ {formatDateLong(data.eventDate)}
+                <Calendar size={12} /> {formatDateLong(data.eventDate)}
             </div>
 
             {/* ── Cuerpo: Datos del Asistente ── */}
@@ -162,23 +166,6 @@ export default function Gafete({ data }: GafeteProps) {
                     gap: "2.5mm",
                 }}
             >
-                {/* Categoría / Tag */}
-                <span
-                    style={{
-                        fontSize: "7pt",
-                        fontWeight: 700,
-                        letterSpacing: "0.1em",
-                        textTransform: "uppercase",
-                        color: "#125af5",
-                        background: "rgba(18, 90, 245, 0.08)",
-                        padding: "1.5mm 4mm",
-                        borderRadius: "20px",
-                        border: "1px solid rgba(18, 90, 245, 0.2)",
-                    }}
-                >
-                    PARTICIPANTE
-                </span>
-
                 {/* Nombre Completo */}
                 <h2
                     style={{
@@ -194,19 +181,32 @@ export default function Gafete({ data }: GafeteProps) {
                     {data.assistantName}
                 </h2>
 
-                {/* Cédula */}
-                <div
-                    style={{
-                        fontSize: "8.5pt",
-                        color: "#475569",
-                        fontWeight: 600,
-                        background: "#f1f5f9",
-                        padding: "1mm 3mm",
-                        borderRadius: "4px",
-                        marginTop: "1mm",
-                    }}
-                >
-                    C.C. {data.identification}
+                {/* Cédula y Rol */}
+                <div style={{ display: "flex", gap: "2mm", marginTop: "2mm" }}>
+                    <div
+                        style={{
+                            fontSize: "8.5pt",
+                            color: "#475569",
+                            fontWeight: 600,
+                            background: "#f1f5f9",
+                            padding: "1mm 3mm",
+                            borderRadius: "4px",
+                        }}
+                    >
+                        C.C. {data.identification}
+                    </div>
+                    <div
+                        style={{
+                            fontSize: "8.5pt",
+                            color: "#475569",
+                            fontWeight: 600,
+                            background: "#f1f5f9",
+                            padding: "1mm 3mm",
+                            borderRadius: "4px",
+                        }}
+                    >
+                        PARTICIPANTE
+                    </div>
                 </div>
             </div>
 

@@ -576,6 +576,7 @@ export interface GetAttendeesReportParams {
     page?: number
     limit?: number
     search?: string
+    daysRange?: number // 30, 90, 365, o 0 para todo el historial
 }
 
 export async function getEventAttendeesReportAction({
@@ -583,6 +584,7 @@ export async function getEventAttendeesReportAction({
     page = 1,
     limit = 20,
     search = "",
+    daysRange = 0,
 }: GetAttendeesReportParams) {
     try {
         if (!eventId) {
@@ -592,6 +594,8 @@ export async function getEventAttendeesReportAction({
         const event = await prisma.event.findUnique({
             where: { id: eventId },
             include: {
+                city: true,
+                organization: true,
                 days: {
                     orderBy: { date: "asc" },
                     select: { id: true, date: true, title: true }
@@ -603,50 +607,61 @@ export async function getEventAttendeesReportAction({
 
         const dayIds = event.days.map(d => d.id)
         const searchTrim = search.trim()
-        const assistantWhere = searchTrim
-            ? {
-                OR: [
-                    { name: { contains: searchTrim, mode: "insensitive" as const } },
-                    { identification: { contains: searchTrim, mode: "insensitive" as const } },
-                    { email: { contains: searchTrim, mode: "insensitive" as const } },
-                ]
+
+        // Filtro por tiempo (si daysRange > 0)
+        let dateWhere = {}
+        if (daysRange > 0) {
+            const dateThreshold = new Date()
+            dateThreshold.setDate(dateThreshold.getDate() - daysRange)
+            dateWhere = {
+                attendedAt: { gte: dateThreshold }
             }
-            : {}
+        }
+
+        const assistantWhere: any = {
+            registrations: {
+                some: {
+                    eventDayId: { in: dayIds },
+                    ...dateWhere
+                }
+            }
+        }
+
+        if (searchTrim) {
+            assistantWhere.OR = [
+                { name: { contains: searchTrim, mode: "insensitive" as const } },
+                { identification: { contains: searchTrim, mode: "insensitive" as const } },
+                { email: { contains: searchTrim, mode: "insensitive" as const } },
+            ]
+        }
 
         const totalAttendeesCount = await prisma.assistant.count({
-            where: {
-                registrations: {
-                    some: { eventDayId: { in: dayIds } }
-                },
-                ...assistantWhere
-            }
+            where: assistantWhere
         })
 
         const totalPages = Math.ceil(totalAttendeesCount / limit) || 1
         const currentPage = Math.max(1, Math.min(page, totalPages))
 
         const assistants = await prisma.assistant.findMany({
-            where: {
-                registrations: {
-                    some: { eventDayId: { in: dayIds } }
-                },
-                ...assistantWhere
-            },
+            where: assistantWhere,
             skip: (currentPage - 1) * limit,
             take: limit,
             orderBy: { name: "asc" },
             include: {
                 registrations: {
-                    where: { eventDayId: { in: dayIds } },
+                    where: {
+                        eventDayId: { in: dayIds },
+                        ...dateWhere
+                    },
                     include: {
-                        user: { select: { name: true } }
+                        user: { select: { name: true, email: true } }
                     }
                 }
             }
         })
 
         const formattedAttendees = assistants.map(ast => {
-            const daysMap: Record<string, { attended: boolean; attendedAt?: string; staffName?: string }> = {}
+            const daysMap: Record<string, { attended: boolean; attendedAt?: string; staffName?: string; qrCode?: string; ipAddress?: string }> = {}
 
             event.days.forEach(d => {
                 const reg = ast.registrations.find(r => r.eventDayId === d.id)
@@ -654,7 +669,9 @@ export async function getEventAttendeesReportAction({
                     daysMap[d.id] = {
                         attended: reg.checkedIn,
                         attendedAt: reg.attendedAt.toISOString(),
-                        staffName: reg.user?.name || "Staff"
+                        staffName: reg.user?.name || "Staff",
+                        qrCode: reg.qrCode || undefined,
+                        ipAddress: reg.ipAddress || undefined,
                     }
                 } else {
                     daysMap[d.id] = { attended: false }
@@ -672,12 +689,25 @@ export async function getEventAttendeesReportAction({
                 phone: ast.phoneNumber || "—",
                 firstAttendedAt: firstReg ? firstReg.attendedAt.toISOString() : null,
                 registeredBy: firstReg?.user?.name || "Staff",
+                qrCode: firstReg?.qrCode || "N/A",
+                ipAddress: firstReg?.ipAddress || "N/A",
                 days: daysMap
             }
         })
 
         return {
-            eventName: event.name,
+            eventMetadata: {
+                id: event.id,
+                name: event.name,
+                description: event.description,
+                cityName: event.city?.name || "N/A",
+                organizationName: event.organization?.name || "N/A",
+                startDate: event.startDate.toISOString(),
+                endDate: event.endDate.toISOString(),
+                location: event.location || "N/A",
+                capacity: event.capacity ?? null,
+                totalDays: event.days.length,
+            },
             days: event.days.map((d, index) => ({
                 id: d.id,
                 label: d.title || `Día ${index + 1}`,
@@ -694,7 +724,7 @@ export async function getEventAttendeesReportAction({
     }
 }
 
-export async function exportEventAttendeesReportToExcelAction(eventId: string) {
+export async function exportEventAttendeesReportToExcelAction(eventId: string, daysRange: number = 0) {
     try {
         const event = await prisma.event.findUnique({
             where: { id: eventId },
@@ -711,16 +741,31 @@ export async function exportEventAttendeesReportToExcelAction(eventId: string) {
         if (!event) return { error: "Evento no encontrado" }
         const dayIds = event.days.map(d => d.id)
 
+        let dateWhere = {}
+        if (daysRange > 0) {
+            const dateThreshold = new Date()
+            dateThreshold.setDate(dateThreshold.getDate() - daysRange)
+            dateWhere = {
+                attendedAt: { gte: dateThreshold }
+            }
+        }
+
         const assistants = await prisma.assistant.findMany({
             where: {
                 registrations: {
-                    some: { eventDayId: { in: dayIds } }
+                    some: {
+                        eventDayId: { in: dayIds },
+                        ...dateWhere
+                    }
                 }
             },
             orderBy: { name: "asc" },
             include: {
                 registrations: {
-                    where: { eventDayId: { in: dayIds } },
+                    where: {
+                        eventDayId: { in: dayIds },
+                        ...dateWhere
+                    },
                     include: { user: { select: { name: true } } }
                 }
             }
@@ -728,61 +773,92 @@ export async function exportEventAttendeesReportToExcelAction(eventId: string) {
 
         const wb = new ExcelJS.Workbook()
         wb.creator = "Eventos Platform"
-        const ws = wb.addWorksheet("Asistentes del Evento")
+        const ws = wb.addWorksheet("Informe del Evento")
 
-        const columns: Partial<ExcelJS.Column>[] = [
-            { header: "Nombre Completo", key: "name", width: 28 },
-            { header: "Identificación (C.C.)", key: "identification", width: 18 },
-            { header: "Correo Electrónico", key: "email", width: 26 },
-            { header: "Teléfono", key: "phone", width: 16 },
-        ]
+        // ── Metadatos del Evento (Header del Excel) ──
+        const rangeLabel = daysRange === 30
+            ? "Últimos 30 días"
+            : daysRange === 90
+            ? "Últimos 90 días"
+            : daysRange === 365
+            ? "Último año (365 días)"
+            : "Histórico completo"
 
+        const titleRow = ws.addRow(["INFORME DE PARTICIPANTES Y METADATA DEL EVENTO"])
+        titleRow.font = { bold: true, size: 14, color: { argb: "FF125AF5" } }
+
+        ws.addRow(["Evento:", event.name, "Organización:", event.organization?.name || "N/A"])
+        ws.addRow(["Ciudad:", event.city?.name || "N/A", "Ubicación:", event.location || "N/A"])
+        ws.addRow([
+            "Fechas del Evento:",
+            `${new Date(event.startDate).toLocaleDateString("es-CO")} - ${new Date(event.endDate).toLocaleDateString("es-CO")}`,
+            "Capacidad:",
+            event.capacity ? `${event.capacity} personas` : "Sin límite"
+        ])
+        ws.addRow(["Período del Reporte:", rangeLabel, "Fecha de Generación:", new Date().toLocaleString("es-CO")])
+        ws.addRow(["Total Registrados en Rango:", assistants.length])
+        ws.addRow([]) // Fila vacía para separación
+
+        // ── Encabezados de Tabla de Participantes ──
+        const headers = ["Nombre Completo", "Identificación (C.C.)", "Correo Electrónico", "Teléfono"]
         event.days.forEach((d, index) => {
             const dateStr = new Date(d.date).toLocaleDateString("es-CO")
             const dayLabel = d.title ? `${d.title} (${dateStr})` : `Día ${index + 1} (${dateStr})`
-            columns.push({ header: dayLabel, key: `day_${d.id}`, width: 22 })
+            headers.push(dayLabel)
         })
+        headers.push("Primer Registro (Fecha/Hora)", "Registrado Por (Staff)", "Código QR", "Dirección IP")
 
-        columns.push(
-            { header: "Primer Registro (Fecha/Hora)", key: "firstReg", width: 22 },
-            { header: "Registrado Por", key: "staff", width: 20 }
-        )
-
-        ws.columns = columns as ExcelJS.Column[]
-
-        const headerStyle: Partial<ExcelJS.Style> = {
-            font: { bold: true, color: { argb: "FFFFFFFF" } },
-            fill: {
+        const tableHeaderRow = ws.addRow(headers)
+        tableHeaderRow.eachCell((cell) => {
+            cell.font = { bold: true, color: { argb: "FFFFFFFF" } }
+            cell.fill = {
                 type: "pattern",
                 pattern: "solid",
                 fgColor: { argb: "FF125AF5" },
-            },
-            alignment: { horizontal: "center", vertical: "middle" },
-        }
-        ws.getRow(1).eachCell((cell) => Object.assign(cell, headerStyle))
+            }
+            cell.alignment = { horizontal: "center", vertical: "middle" }
+        })
+
+        // Configurar anchos de columna
+        ws.columns = [
+            { width: 28 }, // Nombre
+            { width: 18 }, // C.C.
+            { width: 26 }, // Email
+            { width: 16 }, // Teléfono
+            ...event.days.map(() => ({ width: 22 })),
+            { width: 22 }, // Primer Registro
+            { width: 20 }, // Staff
+            { width: 26 }, // QR Code
+            { width: 18 }, // IP Address
+        ]
 
         assistants.forEach(ast => {
             const sortedRegs = [...ast.registrations].sort((a, b) => a.attendedAt.getTime() - b.attendedAt.getTime())
             const firstReg = sortedRegs[0]
 
-            const rowData: Record<string, any> = {
-                name: ast.name,
-                identification: ast.identification,
-                email: ast.email.endsWith("@temporal.com") ? "—" : ast.email,
-                phone: ast.phoneNumber || "—",
-                firstReg: firstReg ? firstReg.attendedAt.toLocaleString("es-CO") : "—",
-                staff: firstReg?.user?.name || "Staff",
-            }
+            const rowData: (string | number)[] = [
+                ast.name,
+                ast.identification,
+                ast.email.endsWith("@temporal.com") ? "—" : ast.email,
+                ast.phoneNumber || "—"
+            ]
 
             event.days.forEach(d => {
                 const reg = ast.registrations.find(r => r.eventDayId === d.id)
                 if (reg && reg.checkedIn) {
                     const timeStr = new Date(reg.attendedAt).toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit" })
-                    rowData[`day_${d.id}`] = `✓ Asistió (${timeStr})`
+                    rowData.push(`✓ Asistió (${timeStr})`)
                 } else {
-                    rowData[`day_${d.id}`] = "— No asistió"
+                    rowData.push("— No asistió")
                 }
             })
+
+            rowData.push(
+                firstReg ? firstReg.attendedAt.toLocaleString("es-CO") : "—",
+                firstReg?.user?.name || "Staff",
+                firstReg?.qrCode || "N/A",
+                firstReg?.ipAddress || "N/A"
+            )
 
             ws.addRow(rowData)
         })
@@ -790,7 +866,7 @@ export async function exportEventAttendeesReportToExcelAction(eventId: string) {
         const buffer = await wb.xlsx.writeBuffer()
         const base64 = Buffer.from(buffer).toString("base64")
         const sanitizeName = event.name.replace(/[^a-zA-Z0-9_-]/g, "_")
-        const filename = `informe-asistentes-${sanitizeName}-${new Date().toISOString().slice(0, 10)}.xlsx`
+        const filename = `informe-${sanitizeName}-${daysRange ? daysRange + "dias-" : ""}${new Date().toISOString().slice(0, 10)}.xlsx`
 
         return { base64, filename }
     } catch (e: any) {
@@ -798,4 +874,5 @@ export async function exportEventAttendeesReportToExcelAction(eventId: string) {
         return { error: "Error al generar el reporte en Excel" }
     }
 }
+
 
