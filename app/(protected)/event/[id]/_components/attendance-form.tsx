@@ -1,13 +1,14 @@
 "use client"
 
 import { useRef, useState, useEffect } from "react"
-import { Check, Loader2, ScanLine, ChevronDown, AlertCircle } from "lucide-react"
+import { Check, Loader2, ScanLine, ChevronDown, AlertCircle, Printer } from "lucide-react"
 import { toast }            from "sonner"
 import { useOfflineQueue }  from "@/app/_hooks/use-offline-queue"
 import { useDocumentLookup } from "@/app/_hooks/use-document-lookup"
 import PrintModal            from "./print-modal"
 import type { GafeteData }   from "@/app/_components/print/gafete"
 import { parseColombianID }  from "@/app/_lib/parse-colombian-id"
+
 
 interface AttendanceFormProps {
     cities: string[]
@@ -88,7 +89,29 @@ export default function AttendanceForm({
     // Hook de lookup
     const lookup = useDocumentLookup(form.cedula, eventDayId || undefined)
 
-    // Auto-focus en cédula cuando cambia evento
+    // Restaurar selecciones de localStorage al montar
+    useEffect(() => {
+        try {
+            const savedCity = localStorage.getItem("eventos_selected_city")
+            const savedEventId = localStorage.getItem("eventos_selected_event_id")
+            const savedDayId = localStorage.getItem("eventos_selected_day_id")
+
+            if (savedCity && cities.includes(savedCity) && !city) {
+                setCity(savedCity)
+            }
+            if (savedEventId && events.some((e) => e.id === savedEventId) && !preselectedEventId && !eventId) {
+                setEventId(savedEventId)
+                const foundEv = events.find((e) => e.id === savedEventId)
+                if (foundEv) {
+                    if (savedCity && cities.includes(foundEv.city)) setCity(foundEv.city)
+                    if (savedDayId && foundEv.days.some((d) => d.id === savedDayId)) setEventDayId(savedDayId)
+                    else setEventDayId(getDefaultDayId(foundEv.days))
+                }
+            }
+        } catch {}
+    }, [cities, events, preselectedEventId])
+
+    // Auto-focus en cédula cuando cambia evento o se cierra el modal
     useEffect(() => {
         if (eventId && !isPrintModalOpen) {
             cedulaRef.current?.focus()
@@ -108,7 +131,7 @@ export default function AttendanceForm({
         }
     }, [lookup.assistant, success, isAutoSubmitting, isPrintModalOpen])
 
-    // Auto-disparo (inmediato)
+    // Auto-disparo (inmediato si es nuevo o encontrado para check-in)
     useEffect(() => {
         if (
             lookup.status === "found" &&
@@ -134,19 +157,60 @@ export default function AttendanceForm({
         }
     }, [lookup.status, form.nombre, form.apellido, form.cedula, loading, success, isAutoSubmitting, isPrintModalOpen])
 
-
     const cityEvents = events.filter((e) => e.city === city && e.status !== "past")
     const selectedEvent = events.find((e) => e.id === eventId)
 
-    // Actualizar día por defecto cuando cambia el evento
+    const handleCitySelect = (newCity: string) => {
+        setCity(newCity)
+        setEventId("")
+        setEventDayId("")
+        try {
+            localStorage.setItem("eventos_selected_city", newCity)
+            localStorage.removeItem("eventos_selected_event_id")
+            localStorage.removeItem("eventos_selected_day_id")
+        } catch {}
+    }
+
     const handleEventChange = (newEventId: string) => {
         setEventId(newEventId)
         const ev = events.find((e) => e.id === newEventId)
-        setEventDayId(getDefaultDayId(ev?.days ?? []))
+        const defaultDay = getDefaultDayId(ev?.days ?? [])
+        setEventDayId(defaultDay)
+        try {
+            if (city) localStorage.setItem("eventos_selected_city", city)
+            localStorage.setItem("eventos_selected_event_id", newEventId)
+            if (defaultDay) localStorage.setItem("eventos_selected_day_id", defaultDay)
+        } catch {}
+    }
+
+    const handleDayChange = (newDayId: string) => {
+        setEventDayId(newDayId)
+        try {
+            localStorage.setItem("eventos_selected_day_id", newDayId)
+        } catch {}
     }
 
     function setField<K extends keyof FormData>(key: K, value: FormData[K]) {
         setForm((prev) => ({ ...prev, [key]: value }))
+    }
+
+    const handleReprintExisting = () => {
+        if (lookup.gafeteData) {
+            setPrintData(lookup.gafeteData as GafeteData)
+        } else {
+            const fallbackGafete: GafeteData = {
+                attendanceId: form.cedula,
+                eventName: selectedEvent?.title ?? "Evento",
+                eventDate: selectedEvent?.days.find(d => d.id === eventDayId)?.date ?? new Date().toISOString(),
+                assistantName: `${form.nombre} ${form.apellido}`.trim() || "Asistente",
+                identification: form.cedula,
+                location: selectedEvent?.location,
+                organizationName: selectedEvent?.organizationName,
+            }
+            setPrintData(fallbackGafete)
+        }
+        setIsPrintModalOpen(true)
+        toast.info("Reimprimiendo credencial...")
     }
 
     const handleCedulaChange = (raw: string) => {
@@ -163,6 +227,7 @@ export default function AttendanceForm({
             setField("cedula", raw)
         }
     }
+
 
     async function handleSubmit(e: React.FormEvent) {
         e.preventDefault()
@@ -286,10 +351,7 @@ export default function AttendanceForm({
                         <select
                             id="city-select"
                             value={city}
-                            onChange={(e) => {
-                                setCity(e.target.value)
-                                setEventId("")
-                            }}
+                            onChange={(e) => handleCitySelect(e.target.value)}
                             style={{
                                 appearance: "none" as const,
                                 background: "transparent",
@@ -396,7 +458,7 @@ export default function AttendanceForm({
                             <select
                                 id="event-day-select"
                                 value={eventDayId}
-                                onChange={(e) => setEventDayId(e.target.value)}
+                                onChange={(e) => handleDayChange(e.target.value)}
                                 style={{
                                     appearance: "none" as const,
                                     background: "transparent",
@@ -492,6 +554,11 @@ export default function AttendanceForm({
                                     Usuario nuevo
                                 </span>
                             )}
+                            {lookup.status === "already_checked_in" && (
+                                <span className="text-[10px] font-semibold normal-case text-amber-500">
+                                    ! Ya registrado hoy
+                                </span>
+                            )}
                         </span>
                         <input
                             id="attendance-cedula"
@@ -504,7 +571,10 @@ export default function AttendanceForm({
                             onChange={(e) => handleCedulaChange(e.target.value)}
                             onKeyDown={(e) => {
                                 if (e.key === "Enter") {
-                                    e.preventDefault() // Evitar submit prematuro del escáner
+                                    if (lookup.status === "already_checked_in") {
+                                        e.preventDefault()
+                                        handleReprintExisting()
+                                    }
                                 }
                             }}
                             style={{ 
@@ -522,12 +592,22 @@ export default function AttendanceForm({
                             }}
                         />
                         
-                        {/* Mensaje de error si ya tiene checkin */}
+                        {/* Mensaje de error / acción si ya tiene checkin */}
                         {lookup.status === "already_checked_in" && (
-                            <span className="text-xs flex items-center gap-1 mt-0.5" style={{ color: "var(--color-danger)" }}>
-                                <AlertCircle size={12} />
-                                Este asistente ya se registró hoy
-                            </span>
+                            <div className="flex flex-col gap-2 p-3 mt-1 rounded border border-amber-500/30 bg-amber-500/10">
+                                <span className="text-xs font-medium flex items-center gap-1.5 text-amber-600 dark:text-amber-400">
+                                    <AlertCircle size={14} />
+                                    {form.nombre ? `${form.nombre} ${form.apellido}` : "Este asistente"} ya registró su asistencia hoy.
+                                </span>
+                                <button
+                                    type="button"
+                                    onClick={handleReprintExisting}
+                                    className="flex items-center justify-center gap-2 py-2 px-3 text-xs font-semibold rounded bg-amber-500 hover:bg-amber-600 text-white transition-colors cursor-pointer"
+                                >
+                                    <Printer size={14} />
+                                    Reimprimir Escarapela / Credencial
+                                </button>
+                            </div>
                         )}
                     </label>
 
@@ -613,43 +693,54 @@ export default function AttendanceForm({
                     </div>
 
                     {/* Submit */}
-                    <button
-                        id="attendance-submit"
-                        type="submit"
-                        disabled={loading || success || lookup.status === "already_checked_in"}
-                        className="flex items-center justify-center gap-2 w-full py-3 px-4 text-sm font-medium rounded-sm transition-all"
-                        style={{
-                            background:
-                                success
-                                    ? "var(--color-primary)"
-                                    : loading || isAutoSubmitting || lookup.status === "already_checked_in"
-                                        ? "var(--color-border)"
-                                        : "var(--color-text)",
-                            color: success || loading || isAutoSubmitting || lookup.status === "already_checked_in" 
-                                ? "var(--color-text-muted)" 
-                                : "var(--color-surface)",
-                            border: "none",
-                            cursor: loading || success || isAutoSubmitting || lookup.status === "already_checked_in" 
-                                ? "default" 
-                                : "pointer",
-                        }}
-                    >
-                        {loading || isAutoSubmitting ? (
-                            <>
-                                <Loader2 size={16} className="animate-spin" />
-                                {isAutoSubmitting ? "Registrando..." : "Guardando..."}
-                            </>
-                        ) : success ? (
-                            <>
-                                <Check size={15} strokeWidth={2.5} />
-                                Asistencia registrada
-                            </>
-                        ) : lookup.status === "already_checked_in" ? (
-                            "Ya registrado hoy"
-                        ) : (
-                            "Registrar asistencia"
-                        )}
-                    </button>
+                    {lookup.status === "already_checked_in" ? (
+                        <button
+                            id="attendance-reprint-submit"
+                            type="button"
+                            onClick={handleReprintExisting}
+                            className="flex items-center justify-center gap-2 w-full py-3 px-4 text-sm font-semibold rounded-sm transition-all text-white bg-amber-500 hover:bg-amber-600 cursor-pointer shadow-sm"
+                        >
+                            <Printer size={16} />
+                            Reimprimir Escarapela / Credencial
+                        </button>
+                    ) : (
+                        <button
+                            id="attendance-submit"
+                            type="submit"
+                            disabled={loading || success}
+                            className="flex items-center justify-center gap-2 w-full py-3 px-4 text-sm font-medium rounded-sm transition-all"
+                            style={{
+                                background:
+                                    success
+                                        ? "var(--color-primary)"
+                                        : loading || isAutoSubmitting
+                                            ? "var(--color-border)"
+                                            : "var(--color-text)",
+                                color: success || loading || isAutoSubmitting
+                                    ? "var(--color-text-muted)" 
+                                    : "var(--color-surface)",
+                                border: "none",
+                                cursor: loading || success || isAutoSubmitting 
+                                    ? "default" 
+                                    : "pointer",
+                            }}
+                        >
+                            {loading || isAutoSubmitting ? (
+                                <>
+                                    <Loader2 size={16} className="animate-spin" />
+                                    {isAutoSubmitting ? "Registrando..." : "Guardando..."}
+                                </>
+                            ) : success ? (
+                                <>
+                                    <Check size={15} strokeWidth={2.5} />
+                                    Asistencia registrada
+                                </>
+                            ) : (
+                                "Registrar asistencia"
+                            )}
+                        </button>
+                    )}
+
                 </form>
             )}
         </div>

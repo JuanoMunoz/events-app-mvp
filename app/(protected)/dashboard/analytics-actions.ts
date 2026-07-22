@@ -566,3 +566,236 @@ export async function exportTableToExcelAction(
         return { error: "Error al generar el archivo Excel" }
     }
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   SECCIÓN 11 — Informe Detallado de Asistentes por Evento (10k+)
+═══════════════════════════════════════════════════════════════════ */
+
+export interface GetAttendeesReportParams {
+    eventId: string
+    page?: number
+    limit?: number
+    search?: string
+}
+
+export async function getEventAttendeesReportAction({
+    eventId,
+    page = 1,
+    limit = 20,
+    search = "",
+}: GetAttendeesReportParams) {
+    try {
+        if (!eventId) {
+            return { error: "ID de evento no proporcionado" }
+        }
+
+        const event = await prisma.event.findUnique({
+            where: { id: eventId },
+            include: {
+                days: {
+                    orderBy: { date: "asc" },
+                    select: { id: true, date: true, title: true }
+                }
+            }
+        })
+
+        if (!event) return { error: "Evento no encontrado" }
+
+        const dayIds = event.days.map(d => d.id)
+        const searchTrim = search.trim()
+        const assistantWhere = searchTrim
+            ? {
+                OR: [
+                    { name: { contains: searchTrim, mode: "insensitive" as const } },
+                    { identification: { contains: searchTrim, mode: "insensitive" as const } },
+                    { email: { contains: searchTrim, mode: "insensitive" as const } },
+                ]
+            }
+            : {}
+
+        const totalAttendeesCount = await prisma.assistant.count({
+            where: {
+                registrations: {
+                    some: { eventDayId: { in: dayIds } }
+                },
+                ...assistantWhere
+            }
+        })
+
+        const totalPages = Math.ceil(totalAttendeesCount / limit) || 1
+        const currentPage = Math.max(1, Math.min(page, totalPages))
+
+        const assistants = await prisma.assistant.findMany({
+            where: {
+                registrations: {
+                    some: { eventDayId: { in: dayIds } }
+                },
+                ...assistantWhere
+            },
+            skip: (currentPage - 1) * limit,
+            take: limit,
+            orderBy: { name: "asc" },
+            include: {
+                registrations: {
+                    where: { eventDayId: { in: dayIds } },
+                    include: {
+                        user: { select: { name: true } }
+                    }
+                }
+            }
+        })
+
+        const formattedAttendees = assistants.map(ast => {
+            const daysMap: Record<string, { attended: boolean; attendedAt?: string; staffName?: string }> = {}
+
+            event.days.forEach(d => {
+                const reg = ast.registrations.find(r => r.eventDayId === d.id)
+                if (reg) {
+                    daysMap[d.id] = {
+                        attended: reg.checkedIn,
+                        attendedAt: reg.attendedAt.toISOString(),
+                        staffName: reg.user?.name || "Staff"
+                    }
+                } else {
+                    daysMap[d.id] = { attended: false }
+                }
+            })
+
+            const sortedRegs = [...ast.registrations].sort((a, b) => a.attendedAt.getTime() - b.attendedAt.getTime())
+            const firstReg = sortedRegs[0]
+
+            return {
+                id: ast.id,
+                name: ast.name,
+                identification: ast.identification,
+                email: ast.email.endsWith("@temporal.com") ? "—" : ast.email,
+                phone: ast.phoneNumber || "—",
+                firstAttendedAt: firstReg ? firstReg.attendedAt.toISOString() : null,
+                registeredBy: firstReg?.user?.name || "Staff",
+                days: daysMap
+            }
+        })
+
+        return {
+            eventName: event.name,
+            days: event.days.map((d, index) => ({
+                id: d.id,
+                label: d.title || `Día ${index + 1}`,
+                date: d.date.toISOString(),
+            })),
+            attendees: formattedAttendees,
+            total: totalAttendeesCount,
+            page: currentPage,
+            totalPages,
+        }
+    } catch (e: any) {
+        console.error("Error al obtener informe de asistentes:", e)
+        return { error: "Error interno al obtener el informe de asistentes" }
+    }
+}
+
+export async function exportEventAttendeesReportToExcelAction(eventId: string) {
+    try {
+        const event = await prisma.event.findUnique({
+            where: { id: eventId },
+            include: {
+                city: true,
+                organization: true,
+                days: {
+                    orderBy: { date: "asc" },
+                    select: { id: true, date: true, title: true }
+                }
+            }
+        })
+
+        if (!event) return { error: "Evento no encontrado" }
+        const dayIds = event.days.map(d => d.id)
+
+        const assistants = await prisma.assistant.findMany({
+            where: {
+                registrations: {
+                    some: { eventDayId: { in: dayIds } }
+                }
+            },
+            orderBy: { name: "asc" },
+            include: {
+                registrations: {
+                    where: { eventDayId: { in: dayIds } },
+                    include: { user: { select: { name: true } } }
+                }
+            }
+        })
+
+        const wb = new ExcelJS.Workbook()
+        wb.creator = "Eventos Platform"
+        const ws = wb.addWorksheet("Asistentes del Evento")
+
+        const columns: Partial<ExcelJS.Column>[] = [
+            { header: "Nombre Completo", key: "name", width: 28 },
+            { header: "Identificación (C.C.)", key: "identification", width: 18 },
+            { header: "Correo Electrónico", key: "email", width: 26 },
+            { header: "Teléfono", key: "phone", width: 16 },
+        ]
+
+        event.days.forEach((d, index) => {
+            const dateStr = new Date(d.date).toLocaleDateString("es-CO")
+            const dayLabel = d.title ? `${d.title} (${dateStr})` : `Día ${index + 1} (${dateStr})`
+            columns.push({ header: dayLabel, key: `day_${d.id}`, width: 22 })
+        })
+
+        columns.push(
+            { header: "Primer Registro (Fecha/Hora)", key: "firstReg", width: 22 },
+            { header: "Registrado Por", key: "staff", width: 20 }
+        )
+
+        ws.columns = columns as ExcelJS.Column[]
+
+        const headerStyle: Partial<ExcelJS.Style> = {
+            font: { bold: true, color: { argb: "FFFFFFFF" } },
+            fill: {
+                type: "pattern",
+                pattern: "solid",
+                fgColor: { argb: "FF125AF5" },
+            },
+            alignment: { horizontal: "center", vertical: "middle" },
+        }
+        ws.getRow(1).eachCell((cell) => Object.assign(cell, headerStyle))
+
+        assistants.forEach(ast => {
+            const sortedRegs = [...ast.registrations].sort((a, b) => a.attendedAt.getTime() - b.attendedAt.getTime())
+            const firstReg = sortedRegs[0]
+
+            const rowData: Record<string, any> = {
+                name: ast.name,
+                identification: ast.identification,
+                email: ast.email.endsWith("@temporal.com") ? "—" : ast.email,
+                phone: ast.phoneNumber || "—",
+                firstReg: firstReg ? firstReg.attendedAt.toLocaleString("es-CO") : "—",
+                staff: firstReg?.user?.name || "Staff",
+            }
+
+            event.days.forEach(d => {
+                const reg = ast.registrations.find(r => r.eventDayId === d.id)
+                if (reg && reg.checkedIn) {
+                    const timeStr = new Date(reg.attendedAt).toLocaleTimeString("es-CO", { hour: "2-digit", minute: "2-digit" })
+                    rowData[`day_${d.id}`] = `✓ Asistió (${timeStr})`
+                } else {
+                    rowData[`day_${d.id}`] = "— No asistió"
+                }
+            })
+
+            ws.addRow(rowData)
+        })
+
+        const buffer = await wb.xlsx.writeBuffer()
+        const base64 = Buffer.from(buffer).toString("base64")
+        const sanitizeName = event.name.replace(/[^a-zA-Z0-9_-]/g, "_")
+        const filename = `informe-asistentes-${sanitizeName}-${new Date().toISOString().slice(0, 10)}.xlsx`
+
+        return { base64, filename }
+    } catch (e: any) {
+        console.error("Error al exportar reporte de asistentes:", e)
+        return { error: "Error al generar el reporte en Excel" }
+    }
+}
+

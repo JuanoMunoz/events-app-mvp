@@ -15,17 +15,21 @@ interface GafeteProps {
 }
 
 function formatDateLong(iso: string) {
-    return new Date(iso).toLocaleDateString("es-CO", {
-        weekday: "long",
-        day: "numeric",
-        month: "long",
-        year: "numeric",
-    })
+    try {
+        return new Date(iso).toLocaleDateString("es-CO", {
+            weekday: "long",
+            day: "numeric",
+            month: "long",
+            year: "numeric",
+        })
+    } catch {
+        return iso
+    }
 }
 
 /**
  * Gafete / badge para imprimir.
- * Dimensiones pensadas para 3.5" × 5.5" (89 × 140 mm).
+ * Dimensiones pensadas para 89mm × 140mm (3.5" × 5.5").
  * El div raíz tiene el ID "gafete-print-area" para react-to-print.
  */
 export default function Gafete({ data }: GafeteProps) {
@@ -36,126 +40,192 @@ export default function Gafete({ data }: GafeteProps) {
             id="gafete-print-area"
             style={{
                 width: "89mm",
-                minHeight: "140mm",
-                padding: "6mm",
+                height: "140mm",
+                padding: "0",
                 background: "#ffffff",
                 display: "flex",
                 flexDirection: "column",
-                gap: "4mm",
-                fontFamily: "system-ui, -apple-system, sans-serif",
+                fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
                 boxSizing: "border-box",
-                border: "1px solid rgba(39,38,53,0.18)",
-                borderRadius: "4px",
+                border: "1px solid #e2e8f0",
+                borderRadius: "8px",
+                overflow: "hidden",
+                position: "relative",
+                boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
             }}
         >
-            {/* Encabezado con nombre del evento */}
+            {/* ── Ranura superior para cinta / lanyard ── */}
+            <div style={{ display: "flex", justifyContent: "center", paddingTop: "3mm", background: "#0f172a" }}>
+
+                <div
+                    style={{
+                        width: "14mm",
+                        height: "3.5mm",
+                        borderRadius: "2mm",
+                        background: "#ffffff",
+                        opacity: 0.3,
+                    }}
+                />
+            </div>
+
+            {/* ── Banner Superior ── */}
             <div
                 style={{
-                    background: "#125AF5",
-                    margin: "-6mm -6mm 0",
-                    padding: "4mm 6mm",
-                    borderRadius: "4px 4px 0 0",
+                    background: "linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #125af5 100%)",
+                    padding: "4mm 6mm 6mm",
+                    color: "#ffffff",
+                    position: "relative",
                 }}
             >
-                <p
-                    style={{
-                        fontSize: "7pt",
-                        color: "rgba(255,255,255,0.7)",
-                        textTransform: "uppercase",
-                        letterSpacing: "0.1em",
-                        margin: 0,
-                    }}
-                >
-                    {data.organizationName ?? "Evento"}
-                </p>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1.5mm" }}>
+                    <span
+                        style={{
+                            fontSize: "6.5pt",
+                            fontWeight: 700,
+                            letterSpacing: "0.12em",
+                            textTransform: "uppercase",
+                            color: "#93c5fd",
+                        }}
+                    >
+                        {data.organizationName || "EVENTOS OFICIAL"}
+                    </span>
+                    <span
+                        style={{
+                            fontSize: "6pt",
+                            fontWeight: 600,
+                            background: "rgba(255,255,255,0.15)",
+                            padding: "1px 6px",
+                            borderRadius: "10px",
+                            color: "#ffffff",
+                        }}
+                    >
+                        ACREDITACIÓN
+                    </span>
+                </div>
+
                 <h1
                     style={{
-                        fontSize: "12pt",
-                        fontWeight: 700,
-                        color: "#ffffff",
-                        margin: "1mm 0 0",
+                        fontSize: "13pt",
+                        fontWeight: 800,
+                        margin: 0,
                         lineHeight: 1.2,
+                        letterSpacing: "-0.01em",
+                        color: "#ffffff",
+                        textShadow: "0 1px 2px rgba(0,0,0,0.3)",
                     }}
                 >
                     {data.eventName}
                 </h1>
+
                 {data.location && (
                     <p
                         style={{
-                            fontSize: "8pt",
-                            color: "rgba(255,255,255,0.75)",
-                            margin: "1mm 0 0",
+                            fontSize: "7.5pt",
+                            color: "#cbd5e1",
+                            margin: "1.5mm 0 0",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "1mm",
                         }}
                     >
-                        📍 {data.location}
+                        <span>📍</span> {data.location}
                     </p>
                 )}
             </div>
 
-            {/* Fecha */}
-            <p
+            {/* ── Franja de fecha ── */}
+            <div
                 style={{
-                    fontSize: "8pt",
-                    color: "#7c7c7c",
+                    background: "#f8fafc",
+                    borderBottom: "1px solid #e2e8f0",
+                    padding: "2mm 6mm",
+                    fontSize: "7.5pt",
+                    color: "#64748b",
+                    fontWeight: 600,
                     textTransform: "capitalize",
-                    margin: 0,
                 }}
             >
-                {formatDateLong(data.eventDate)}
-            </p>
+                🗓️ {formatDateLong(data.eventDate)}
+            </div>
 
-            {/* Nombre del asistente */}
+            {/* ── Cuerpo: Datos del Asistente ── */}
             <div
                 style={{
                     flex: 1,
+                    padding: "5mm 6mm",
                     display: "flex",
                     flexDirection: "column",
                     justifyContent: "center",
-                    gap: "2mm",
-                    padding: "4mm 0",
-                    borderTop: "1px solid rgba(39,38,53,0.12)",
-                    borderBottom: "1px solid rgba(39,38,53,0.12)",
+                    alignItems: "center",
+                    textAlign: "center",
+                    background: "#ffffff",
+                    gap: "2.5mm",
                 }}
             >
-                <p
+                {/* Categoría / Tag */}
+                <span
                     style={{
                         fontSize: "7pt",
-                        color: "#7c7c7c",
+                        fontWeight: 700,
+                        letterSpacing: "0.1em",
                         textTransform: "uppercase",
-                        letterSpacing: "0.08em",
-                        margin: 0,
+                        color: "#125af5",
+                        background: "rgba(18, 90, 245, 0.08)",
+                        padding: "1.5mm 4mm",
+                        borderRadius: "20px",
+                        border: "1px solid rgba(18, 90, 245, 0.2)",
                     }}
                 >
-                    Participante
-                </p>
+                    PARTICIPANTE
+                </span>
+
+                {/* Nombre Completo */}
                 <h2
                     style={{
-                        fontSize: "18pt",
-                        fontWeight: 700,
-                        color: "#272635",
-                        margin: 0,
+                        fontSize: "17pt",
+                        fontWeight: 800,
+                        color: "#0f172a",
+                        margin: "1mm 0 0",
                         lineHeight: 1.15,
+                        letterSpacing: "-0.02em",
+                        wordBreak: "break-word",
                     }}
                 >
                     {data.assistantName}
                 </h2>
-                <p
+
+                {/* Cédula */}
+                <div
                     style={{
-                        fontSize: "9pt",
-                        color: "#7c7c7c",
-                        margin: 0,
+                        fontSize: "8.5pt",
+                        color: "#475569",
+                        fontWeight: 600,
+                        background: "#f1f5f9",
+                        padding: "1mm 3mm",
+                        borderRadius: "4px",
+                        marginTop: "1mm",
                     }}
                 >
                     C.C. {data.identification}
-                </p>
+                </div>
             </div>
 
-            {/* Código de barras */}
-            <div style={{ marginTop: "2mm" }}>
+            {/* ── Código de barras inferior ── */}
+            <div
+                style={{
+                    background: "#ffffff",
+                    borderTop: "1px dashed #cbd5e1",
+                    padding: "3mm 4mm 4mm",
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    justifyContent: "center",
+                }}
+            >
                 <Barcode
                     value={barcodeValue}
-                    height={50}
-                    fontSize={10}
+                    height={38}
+                    fontSize={8.5}
                     displayValue
                 />
             </div>

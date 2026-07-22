@@ -16,12 +16,14 @@ export interface AssistantData {
 export function useDocumentLookup(identification: string, eventDayId?: string) {
     const [status,    setStatus]    = useState<DocumentStatus>("idle")
     const [assistant, setAssistant] = useState<AssistantData | null>(null)
+    const [gafeteData, setGafeteData] = useState<any | null>(null)
     const timeoutRef = useRef<NodeJS.Timeout | null>(null)
 
     useEffect(() => {
         if (!identification || identification.length < 5) {
             setStatus("idle")
             setAssistant(null)
+            setGafeteData(null)
             if (timeoutRef.current) clearTimeout(timeoutRef.current)
             return
         }
@@ -46,6 +48,7 @@ export function useDocumentLookup(identification: string, eventDayId?: string) {
                 // Sin red y sin registro local → permitir ingreso manual
                 setStatus("not_found")
                 setAssistant(null)
+                setGafeteData(null)
                 return
             }
 
@@ -55,17 +58,21 @@ export function useDocumentLookup(identification: string, eventDayId?: string) {
                 if (res?.error) {
                     setStatus("not_found")
                     setAssistant(null)
+                    setGafeteData(null)
                 } else if (res?.found) {
                     setAssistant(res.assistant || null)
+                    setGafeteData(res.gafeteData || null)
                     setStatus(res.alreadyCheckedIn ? "already_checked_in" : "found")
                 } else {
                     setStatus("not_found")
                     setAssistant(null)
+                    setGafeteData(null)
                 }
             } catch {
                 // Error de red inesperado → tratar como not_found para no bloquear
                 setStatus("not_found")
                 setAssistant(null)
+                setGafeteData(null)
             }
         }, 400)
 
@@ -74,6 +81,7 @@ export function useDocumentLookup(identification: string, eventDayId?: string) {
         }
     }, [identification, eventDayId])
 
-    return { status, assistant }
+    return { status, assistant, gafeteData }
 }
+
 

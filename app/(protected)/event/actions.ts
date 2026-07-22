@@ -145,6 +145,8 @@ export async function findAssistantByIdentificationAction(identification: string
         if (!assistant) return { found: false }
 
         let alreadyCheckedIn = false
+        let gafeteData = null
+
         if (eventDayId) {
             const existingAttendance = await prisma.attendance.findUnique({
                 where: {
@@ -152,10 +154,30 @@ export async function findAssistantByIdentificationAction(identification: string
                         assistantId: assistant.id,
                         eventDayId
                     }
+                },
+                include: {
+                    event: {
+                        include: {
+                            event: {
+                                include: { organization: true }
+                            }
+                        }
+                    }
                 }
             })
             if (existingAttendance) {
                 alreadyCheckedIn = true
+                const day = existingAttendance.event
+                const event = day.event
+                gafeteData = {
+                    attendanceId: existingAttendance.id,
+                    eventName: event.name,
+                    eventDate: day.date.toISOString(),
+                    assistantName: assistant.name,
+                    identification: assistant.identification,
+                    location: event.location,
+                    organizationName: event.organization.name
+                }
             }
         }
 
@@ -166,6 +188,7 @@ export async function findAssistantByIdentificationAction(identification: string
         return {
             found: true,
             alreadyCheckedIn,
+            gafeteData,
             assistant: {
                 nombre,
                 apellido,
@@ -173,7 +196,9 @@ export async function findAssistantByIdentificationAction(identification: string
                 correo: assistant.email.endsWith("@temporal.com") ? "" : assistant.email
             }
         }
-    } catch {
+    } catch (e) {
+        console.error("Error in findAssistantByIdentificationAction:", e)
         return { error: "Error de servidor" }
     }
 }
+

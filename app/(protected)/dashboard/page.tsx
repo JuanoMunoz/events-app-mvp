@@ -2,8 +2,10 @@ import { Suspense } from "react"
 import { prisma } from "@/lib/prisma"
 import StatsGrid from "./_components/stats-grid"
 import EventCarousel from "./_components/event-carousel"
+import EventAttendeesReport from "./_components/event-attendees-report"
 import AttendanceByEvent from "./_components/attendance-by-event"
 import AttendanceTrend from "./_components/attendance-trend"
+
 import CityRanking from "./_components/city-ranking"
 import OrgRanking from "./_components/org-ranking"
 import OccupancyTable from "./_components/occupancy-table"
@@ -241,6 +243,12 @@ export default async function DashboardPage() {
 
             {/* ── 4. ASISTENCIA POR EVENTO ───────────────────────────────── */}
             <AttendanceByEvent events={selectorEvents} />
+
+            {/* ── 4.5. INFORME DETALLADO DE ASISTENTES ─────────────────────── */}
+            {selectorEvents.length > 0 && (
+                <EventAttendeesReport events={selectorEvents} />
+            )}
+
 
             {/* ── 5. TENDENCIA DE ASISTENCIA ─────────────────────────────── */}
             <AttendanceTrend
